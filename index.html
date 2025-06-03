@@ -49,10 +49,13 @@
             width: 4px;
             height: 80px;
             background: linear-gradient(to top, #ff0000 0%, #ff0000 50%, #ffffff 50%, #ffffff 100%);
-            transform-origin: center bottom;
+            transform-origin: center center;
             position: absolute;
             border-radius: 2px;
             transition: transform 0.3s ease;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
         }
         
         #directions {
@@ -225,6 +228,13 @@
                 this.renderer.xr.enabled = true;
                 this.renderer.xr.setSession(this.xrSession);
                 
+                // Append renderer to body for AR view
+                document.body.appendChild(this.renderer.domElement);
+                this.renderer.domElement.style.position = 'absolute';
+                this.renderer.domElement.style.top = '0';
+                this.renderer.domElement.style.left = '0';
+                this.renderer.domElement.style.zIndex = '1';
+                
                 this.scene = new THREE.Scene();
                 this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
                 
@@ -235,9 +245,70 @@
                 const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
                 directionalLight.position.set(0, 1, 0);
                 this.scene.add(directionalLight);
+                
+                // Create AR compass elements
+                this.createARCompass();
+                
+                // Start render loop
+                this.renderer.setAnimationLoop(this.render.bind(this));
             }
             
-            onXRFrame(time, frame) {
+            createARCompass() {
+                // Create a 3D compass that appears in AR
+                const compassGroup = new THREE.Group();
+                
+                // Compass base (ring)
+                const ringGeometry = new THREE.RingGeometry(0.08, 0.1, 32);
+                const ringMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xffffff, 
+                    transparent: true, 
+                    opacity: 0.8,
+                    side: THREE.DoubleSide
+                });
+                const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+                ring.rotation.x = -Math.PI / 2; // Lay flat
+                compassGroup.add(ring);
+                
+                // Compass face
+                const faceGeometry = new THREE.CircleGeometry(0.08, 32);
+                const faceMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x333333, 
+                    transparent: true, 
+                    opacity: 0.7,
+                    side: THREE.DoubleSide
+                });
+                const face = new THREE.Mesh(faceGeometry, faceMaterial);
+                face.rotation.x = -Math.PI / 2;
+                face.position.y = 0.001;
+                compassGroup.add(face);
+                
+                // Compass needle
+                const needleGeometry = new THREE.ConeGeometry(0.005, 0.06, 8);
+                const needleMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+                this.arNeedle = new THREE.Mesh(needleGeometry, needleMaterial);
+                this.arNeedle.rotation.x = -Math.PI / 2;
+                this.arNeedle.position.y = 0.002;
+                compassGroup.add(this.arNeedle);
+                
+                // North indicator
+                const northGeometry = new THREE.ConeGeometry(0.003, 0.02, 8);
+                const northMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+                const north = new THREE.Mesh(northGeometry, northMaterial);
+                north.rotation.x = -Math.PI / 2;
+                north.position.set(0, 0.003, -0.07);
+                compassGroup.add(north);
+                
+                // Position compass in front of user
+                compassGroup.position.set(0, -0.2, -0.5);
+                this.scene.add(compassGroup);
+                this.arCompass = compassGroup;
+            }
+            
+            render() {
+                if (this.renderer && this.scene && this.camera) {
+                    this.renderer.render(this.scene, this.camera);
+                }
+            }
                 if (!this.xrSession || !this.xrRefSpace) return;
                 
                 try {
@@ -287,9 +358,14 @@
             updateCompass(heading) {
                 this.currentHeading = heading;
                 
-                // Update needle rotation
+                // Update 2D needle rotation (properly centered now)
                 const needle = document.getElementById('needle');
-                needle.style.transform = `rotate(${heading}deg)`;
+                needle.style.transform = `translate(-50%, -50%) rotate(${heading}deg)`;
+                
+                // Update AR needle if available
+                if (this.arNeedle) {
+                    this.arNeedle.rotation.y = (heading * Math.PI) / 180;
+                }
                 
                 // Update heading display
                 document.getElementById('heading').textContent = Math.round(heading) + '°';
@@ -322,6 +398,16 @@
                 this.xrSession = null;
                 this.xrRefSpace = null;
                 
+                // Remove AR canvas
+                if (this.renderer && this.renderer.domElement && this.renderer.domElement.parentNode) {
+                    this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+                }
+                this.renderer = null;
+                this.scene = null;
+                this.camera = null;
+                this.arCompass = null;
+                this.arNeedle = null;
+                
                 const button = document.getElementById('startButton');
                 button.textContent = 'Start AR Compass';
                 button.onclick = () => this.startAR();
@@ -338,6 +424,8 @@
     </script>
 </body>
 </html>
+
+
 
 
 
