@@ -119,61 +119,111 @@
       renderer.xr.enabled = true;
       document.body.appendChild(renderer.domElement);
 
-      // Create compass geometry
+      // Create aircraft-style compass
       const compassGroup = new THREE.Group();
       
-      // Compass face
-      const faceGeometry = new THREE.CircleGeometry(0.15, 32);
+      // Main compass ring (outer)
+      const outerRingGeometry = new THREE.RingGeometry(0.18, 0.2, 64);
+      const outerRingMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xffffff, 
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.9
+      });
+      const outerRing = new THREE.Mesh(outerRingGeometry, outerRingMaterial);
+      compassGroup.add(outerRing);
+
+      // Inner compass face
+      const faceGeometry = new THREE.CircleGeometry(0.18, 64);
       const faceMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0x222222, 
+        color: 0x1a1a1a, 
         transparent: true, 
-        opacity: 0.8,
+        opacity: 0.7,
         side: THREE.DoubleSide 
       });
       const compassFace = new THREE.Mesh(faceGeometry, faceMaterial);
+      compassFace.position.z = -0.001; // Slightly behind ring
       compassGroup.add(compassFace);
 
-      // Compass border
-      const borderGeometry = new THREE.RingGeometry(0.15, 0.17, 32);
-      const borderMaterial = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, side: THREE.DoubleSide });
-      const compassBorder = new THREE.Mesh(borderGeometry, borderMaterial);
-      compassGroup.add(compassBorder);
-
-      // Needle
-      const needleGeometry = new THREE.ConeGeometry(0.01, 0.12, 8);
-      const needleMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-      needle = new THREE.Mesh(needleGeometry, needleMaterial);
-      needle.position.y = 0.06;
-      needle.rotation.x = Math.PI;
-      compassGroup.add(needle);
-
-      // Cardinal directions
-      const loader = new THREE.FontLoader();
-      // For simplicity, we'll use small spheres as direction markers
+      // Create rotating compass card with direction markings
+      const compassCard = new THREE.Group();
+      
+      // Direction markers and text
       const directions = [
-        { angle: 0, color: 0xff0000 }, // North - Red
-        { angle: Math.PI/2, color: 0x00ff00 }, // East - Green  
-        { angle: Math.PI, color: 0x0000ff }, // South - Blue
-        { angle: 3*Math.PI/2, color: 0xffff00 } // West - Yellow
+        { angle: 0, text: 'N', color: 0xff4444, major: true },
+        { angle: 30, text: 'NE', color: 0xffffff, major: false },
+        { angle: 60, text: '6', color: 0xffffff, major: false },
+        { angle: 90, text: 'E', color: 0xffffff, major: true },
+        { angle: 120, text: '12', color: 0xffffff, major: false },
+        { angle: 150, text: 'SE', color: 0xffffff, major: false },
+        { angle: 180, text: 'S', color: 0xffffff, major: true },
+        { angle: 210, text: 'SW', color: 0xffffff, major: false },
+        { angle: 240, text: '24', color: 0xffffff, major: false },
+        { angle: 270, text: 'W', color: 0xffffff, major: true },
+        { angle: 300, text: '30', color: 0xffffff, major: false },
+        { angle: 330, text: 'NW', color: 0xffffff, major: false }
       ];
 
       directions.forEach(dir => {
-        const markerGeometry = new THREE.SphereGeometry(0.008, 8, 8);
-        const markerMaterial = new THREE.MeshBasicMaterial({ color: dir.color });
-        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-        marker.position.x = Math.sin(dir.angle) * 0.13;
-        marker.position.z = Math.cos(dir.angle) * 0.13;
-        compassGroup.add(marker);
+        const angleRad = (dir.angle * Math.PI) / 180;
+        const radius = 0.15;
+        
+        // Create tick marks
+        const tickLength = dir.major ? 0.02 : 0.01;
+        const tickGeometry = new THREE.BoxGeometry(0.002, tickLength, 0.001);
+        const tickMaterial = new THREE.MeshBasicMaterial({ color: dir.color });
+        const tick = new THREE.Mesh(tickGeometry, tickMaterial);
+        
+        tick.position.x = Math.sin(angleRad) * (radius + tickLength/2);
+        tick.position.y = Math.cos(angleRad) * (radius + tickLength/2);
+        tick.rotation.z = -angleRad;
+        compassCard.add(tick);
+        
+        // Create direction labels using small boxes to represent text
+        if (dir.major || dir.text.length <= 2) {
+          const labelSize = dir.major ? 0.008 : 0.006;
+          const labelGeometry = new THREE.BoxGeometry(labelSize, labelSize, 0.001);
+          const labelMaterial = new THREE.MeshBasicMaterial({ color: dir.color });
+          const label = new THREE.Mesh(labelGeometry, labelMaterial);
+          
+          label.position.x = Math.sin(angleRad) * (radius - 0.03);
+          label.position.y = Math.cos(angleRad) * (radius - 0.03);
+          compassCard.add(label);
+        }
       });
 
-      // Position compass in front of user
-      compassGroup.position.set(0, -0.3, -0.5);
-      compassGroup.rotation.x = -Math.PI / 6; // Tilt slightly for better visibility
+      // Add degree markings around the compass
+      for (let i = 0; i < 360; i += 10) {
+        if (i % 30 !== 0) { // Skip major direction angles
+          const angleRad = (i * Math.PI) / 180;
+          const tickGeometry = new THREE.BoxGeometry(0.001, 0.008, 0.001);
+          const tickMaterial = new THREE.MeshBasicMaterial({ color: 0x888888 });
+          const tick = new THREE.Mesh(tickGeometry, tickMaterial);
+          
+          tick.position.x = Math.sin(angleRad) * 0.165;
+          tick.position.y = Math.cos(angleRad) * 0.165;
+          tick.rotation.z = -angleRad;
+          compassCard.add(tick);
+        }
+      }
+
+      compassGroup.add(compassCard);
+      compass = compassCard; // This will rotate with heading
+      
+      // Fixed aircraft symbol (triangle pointing forward)
+      const aircraftGeometry = new THREE.ConeGeometry(0.012, 0.025, 3);
+      const aircraftMaterial = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+      const aircraftSymbol = new THREE.Mesh(aircraftGeometry, aircraftMaterial);
+      aircraftSymbol.rotation.x = Math.PI / 2;
+      aircraftSymbol.position.y = 0.08;
+      compassGroup.add(aircraftSymbol);
+
+      // Position compass to follow camera/phone orientation
+      compassGroup.position.set(0, -0.25, -0.4);
       scene.add(compassGroup);
-      compass = compassGroup;
 
       // Lighting
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+      const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
       scene.add(ambientLight);
     }
 
@@ -279,14 +329,14 @@
 
     function render() {
       if (compass && arSession) {
-        // Keep compass facing the user
-        compass.lookAt(camera.position);
-        compass.rotateY(Math.PI); // Flip to face correct direction
+        // Make compass always face the camera (billboard effect)
+        const compassGroup = compass.parent;
+        compassGroup.lookAt(camera.position);
+        compassGroup.rotateY(Math.PI); // Flip to face correct direction
         
-        // Update needle rotation based on device orientation
-        if (needle) {
-          needle.rotation.z = -currentHeading * Math.PI / 180;
-        }
+        // Rotate the compass card based on device heading
+        // Aircraft compass rotates opposite to heading
+        compass.rotation.z = currentHeading * Math.PI / 180;
       }
       
       renderer.render(scene, camera);
@@ -306,6 +356,7 @@
   </script>
 </body>
 </html>
+
 
 
 
