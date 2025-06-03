@@ -144,8 +144,21 @@
             }
             
             init() {
+                console.log('ARCompass initializing...');
                 this.setupEventListeners();
                 this.startDeviceOrientationFallback();
+                
+                // Test the compass needle immediately
+                setTimeout(function() {
+                    console.log('Testing compass needle...');
+                    const needle = document.getElementById('needle');
+                    if (needle) {
+                        console.log('Needle element found, testing rotation...');
+                        needle.style.transform = 'translate(-50%, -50%) rotate(45deg)';
+                    } else {
+                        console.error('Needle element not found!');
+                    }
+                }, 1000);
             }
             
             setupEventListeners() {
@@ -170,35 +183,41 @@
                 const status = document.getElementById('status');
                 
                 // Prevent multiple clicks
-                if (button.disabled) return;
+                if (button.disabled) {
+                    console.log('Button already disabled, ignoring click');
+                    return;
+                }
                 
                 try {
                     button.disabled = true;
-                    status.textContent = 'Initializing AR...';
+                    status.textContent = 'Checking AR support...';
                     console.log('Starting AR...');
                     
                     // Check WebXR support
                     if (!navigator.xr) {
-                        throw new Error('WebXR not supported');
+                        throw new Error('WebXR not supported in this browser');
                     }
                     
                     console.log('WebXR available, checking AR support...');
+                    status.textContent = 'WebXR found, checking AR...';
                     
                     // Check AR support
                     const isSupported = await navigator.xr.isSessionSupported('immersive-ar');
+                    console.log('AR supported:', isSupported);
+                    
                     if (!isSupported) {
                         throw new Error('AR not supported on this device');
                     }
                     
                     console.log('AR supported, requesting session...');
+                    status.textContent = 'AR supported, requesting session...';
                     
-                    // Request AR session
+                    // Request AR session with minimal requirements
                     this.xrSession = await navigator.xr.requestSession('immersive-ar', {
-                        requiredFeatures: ['local-floor'],
-                        optionalFeatures: ['local', 'viewer']
+                        optionalFeatures: ['local-floor', 'local', 'viewer']
                     });
                     
-                    console.log('AR session created');
+                    console.log('AR session created successfully');
                     status.textContent = 'AR session started';
                     
                     // Setup Three.js renderer for WebXR
@@ -206,23 +225,25 @@
                     
                     // Get reference space with error handling
                     try {
-                        this.xrRefSpace = await this.xrSession.requestReferenceSpace('local-floor');
-                        console.log('Using local-floor reference space');
+                        this.xrRefSpace = await this.xrSession.requestReferenceSpace('viewer');
+                        console.log('Using viewer reference space');
                     } catch (referenceSpaceError) {
-                        console.warn('Local-floor reference space not available, trying local');
+                        console.warn('Viewer reference space failed, trying local:', referenceSpaceError);
                         try {
                             this.xrRefSpace = await this.xrSession.requestReferenceSpace('local');
                             console.log('Using local reference space');
                         } catch (localError) {
-                            console.warn('Local reference space not available, trying viewer');
-                            this.xrRefSpace = await this.xrSession.requestReferenceSpace('viewer');
-                            console.log('Using viewer reference space');
+                            console.warn('Local reference space failed, trying local-floor:', localError);
+                            this.xrRefSpace = await this.xrSession.requestReferenceSpace('local-floor');
+                            console.log('Using local-floor reference space');
                         }
                     }
                     
                     // Handle session end
-                    this.xrSession.addEventListener('end', () => {
-                        this.onARSessionEnd();
+                    const self = this;
+                    this.xrSession.addEventListener('end', function() {
+                        console.log('AR session ended');
+                        self.onARSessionEnd();
                     });
                     
                     this.isARActive = true;
@@ -233,14 +254,21 @@
                     const self = this;
                     button.onclick = function(e) {
                         e.preventDefault();
+                        console.log('Stop AR clicked');
                         self.stopAR();
                     };
                     
                 } catch (error) {
                     console.error('AR initialization error:', error);
-                    status.textContent = `AR Error: ${error.message}. Using device orientation.`;
+                    status.textContent = 'AR Error: ' + error.message + '. Using device orientation.';
                     button.disabled = false;
                     button.textContent = 'Start AR Compass';
+                    
+                    // Reset button handler
+                    const self = this;
+                    button.onclick = function() {
+                        self.startAR();
+                    };
                     
                     // Fallback to device orientation
                     this.startDeviceOrientationFallback();
@@ -369,28 +397,86 @@
             
             startDeviceOrientationFallback() {
                 const self = this;
-                if (window.DeviceOrientationEvent) {
-                    window.addEventListener('deviceorientation', function(event) {
-                        if (!self.isARActive && event.alpha !== null) {
-                            // Device orientation alpha gives us compass heading
-                            let heading = 360 - event.alpha;
-                            heading = (heading + 360) % 360;
-                            self.updateCompass(heading);
-                        }
-                    });
+                console.log('Starting device orientation fallback...');
+                
+                // Check if DeviceOrientationEvent is supported
+                if (typeof DeviceOrientationEvent !== 'undefined') {
+                    console.log('DeviceOrientationEvent supported');
                     
-                    document.getElementById('status').textContent = 'Using device orientation sensor';
+                    // Request permission for iOS 13+ devices
+                    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                        console.log('Requesting device orientation permission...');
+                        DeviceOrientationEvent.requestPermission()
+                            .then(function(response) {
+                                console.log('Permission response:', response);
+                                if (response === 'granted') {
+                                    self.addOrientationListener();
+                                } else {
+                                    console.log('Permission denied');
+                                    document.getElementById('status').textContent = 'Permission denied for device orientation';
+                                }
+                            })
+                            .catch(function(error) {
+                                console.error('Permission request failed:', error);
+                                document.getElementById('status').textContent = 'Error requesting orientation permission';
+                            });
+                    } else {
+                        // For non-iOS devices or older iOS versions
+                        console.log('No permission needed, adding listener directly');
+                        self.addOrientationListener();
+                    }
                 } else {
+                    console.log('DeviceOrientationEvent not supported');
                     document.getElementById('status').textContent = 'Device orientation not supported';
+                    
+                    // Simulate compass for testing
+                    self.simulateCompass();
                 }
             }
             
+            addOrientationListener() {
+                const self = this;
+                console.log('Adding orientation event listener...');
+                
+                window.addEventListener('deviceorientation', function(event) {
+                    console.log('Orientation event:', event.alpha, event.beta, event.gamma);
+                    if (!self.isARActive && event.alpha !== null) {
+                        let heading = 360 - event.alpha;
+                        heading = (heading + 360) % 360;
+                        console.log('Calculated heading:', heading);
+                        self.updateCompass(heading);
+                    }
+                });
+                
+                document.getElementById('status').textContent = 'Using device orientation sensor';
+            }
+            
+            simulateCompass() {
+                const self = this;
+                console.log('Simulating compass for testing...');
+                let angle = 0;
+                setInterval(function() {
+                    if (!self.isARActive) {
+                        angle = (angle + 5) % 360;
+                        self.updateCompass(angle);
+                    }
+                }, 100);
+                document.getElementById('status').textContent = 'Simulating compass (no device orientation)';
+            }
+            
             updateCompass(heading) {
+                console.log('Updating compass to heading:', heading);
                 this.currentHeading = heading;
                 
                 // Update 2D needle rotation (properly centered now)
                 const needle = document.getElementById('needle');
-                needle.style.transform = `translate(-50%, -50%) rotate(${heading}deg)`;
+                if (needle) {
+                    const transform = 'translate(-50%, -50%) rotate(' + heading + 'deg)';
+                    needle.style.transform = transform;
+                    console.log('Applied transform:', transform);
+                } else {
+                    console.error('Needle element not found when trying to update!');
+                }
                 
                 // Update AR needle if available
                 if (this.arNeedle) {
@@ -398,11 +484,17 @@
                 }
                 
                 // Update heading display
-                document.getElementById('heading').textContent = Math.round(heading) + '°';
+                const headingElement = document.getElementById('heading');
+                if (headingElement) {
+                    headingElement.textContent = Math.round(heading) + '°';
+                }
                 
                 // Update direction text
                 const direction = this.getDirection(heading);
-                document.getElementById('direction').textContent = direction;
+                const directionElement = document.getElementById('direction');
+                if (directionElement) {
+                    directionElement.textContent = direction;
+                }
             }
             
             getDirection(heading) {
@@ -451,12 +543,14 @@
         }
         
         // Initialize the compass when page loads
-        document.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('load', function() {
+            console.log('Page loaded, initializing compass...');
             new ARCompass();
         });
     </script>
 </body>
 </html>
+
 
 
 
