@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebXR AR Aircraft Compass</title>
+  <title>WebXR AR Magnetic Compass</title>
   <style>
     body {
       margin: 0;
@@ -61,6 +61,16 @@
       transform-origin: bottom center;
       transform: translate(-50%, -100%) rotate(0deg);
     }
+    #arCompass {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 50;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -76,9 +86,12 @@
     <div class="needle2d"></div>
   </div>
 
+  <!-- AR Compass Overlay -->
+  <div id="arCompass"></div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
-    let scene, camera, renderer, compass, needle, arSession;
+    let scene, camera, renderer, compass, arSession;
     let currentHeading = 0;
     
     const needle2d = document.querySelector('.needle2d');
@@ -86,6 +99,7 @@
     const startARBtn = document.getElementById('startAR');
     const headingSpan = document.getElementById('heading');
     const statusSpan = document.getElementById('status');
+    const arCompassDiv = document.getElementById('arCompass');
 
     // Check WebXR support
     async function checkARSupport() {
@@ -109,7 +123,7 @@
       }
     }
 
-    // Initialize Three.js scene
+    // Initialize Three.js scene for full-screen overlay
     function initThreeJS() {
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -117,60 +131,64 @@
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.xr.enabled = true;
-      document.body.appendChild(renderer.domElement);
+      renderer.setClearColor(0x000000, 0); // Transparent background
+      arCompassDiv.appendChild(renderer.domElement);
 
-      // Create aircraft-style compass
+      // Create large compass overlay that fills most of the screen
       const compassGroup = new THREE.Group();
       
-      // Main compass ring (outer)
-      const outerRingGeometry = new THREE.RingGeometry(0.18, 0.2, 64);
+      // Make compass much larger to fill screen
+      const compassScale = 2.5;
+      
+      // Outer compass ring
+      const outerRingGeometry = new THREE.RingGeometry(0.35 * compassScale, 0.38 * compassScale, 128);
       const outerRingMaterial = new THREE.MeshBasicMaterial({ 
         color: 0xffffff, 
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: 0.9
+        opacity: 0.8
       });
       const outerRing = new THREE.Mesh(outerRingGeometry, outerRingMaterial);
       compassGroup.add(outerRing);
 
-      // Inner compass face
-      const faceGeometry = new THREE.CircleGeometry(0.18, 64);
-      const faceMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0x1a1a1a, 
-        transparent: true, 
-        opacity: 0.7,
-        side: THREE.DoubleSide 
+      // Inner compass ring
+      const innerRingGeometry = new THREE.RingGeometry(0.32 * compassScale, 0.35 * compassScale, 128);
+      const innerRingMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0x333333, 
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.6
       });
-      const compassFace = new THREE.Mesh(faceGeometry, faceMaterial);
-      compassFace.position.z = -0.001; // Slightly behind ring
-      compassGroup.add(compassFace);
+      const innerRing = new THREE.Mesh(innerRingGeometry, innerRingMaterial);
+      compassGroup.add(innerRing);
 
-      // Create rotating compass card with direction markings
+      // Create rotating compass card
       const compassCard = new THREE.Group();
       
-      // Direction markers and text
+      // Main directions with larger text representation
       const directions = [
-        { angle: 0, text: 'N', color: 0xff4444, major: true },
-        { angle: 30, text: 'NE', color: 0xffffff, major: false },
-        { angle: 60, text: '6', color: 0xffffff, major: false },
-        { angle: 90, text: 'E', color: 0xffffff, major: true },
-        { angle: 120, text: '12', color: 0xffffff, major: false },
-        { angle: 150, text: 'SE', color: 0xffffff, major: false },
-        { angle: 180, text: 'S', color: 0xffffff, major: true },
-        { angle: 210, text: 'SW', color: 0xffffff, major: false },
-        { angle: 240, text: '24', color: 0xffffff, major: false },
-        { angle: 270, text: 'W', color: 0xffffff, major: true },
-        { angle: 300, text: '30', color: 0xffffff, major: false },
-        { angle: 330, text: 'NW', color: 0xffffff, major: false }
+        { angle: 0, text: 'N', color: 0xff4444, size: 'large' },
+        { angle: 30, text: '030', color: 0xffffff, size: 'small' },
+        { angle: 60, text: '060', color: 0xffffff, size: 'small' },
+        { angle: 90, text: 'E', color: 0xffffff, size: 'large' },
+        { angle: 120, text: '120', color: 0xffffff, size: 'small' },
+        { angle: 150, text: '150', color: 0xffffff, size: 'small' },
+        { angle: 180, text: 'S', color: 0xffffff, size: 'large' },
+        { angle: 210, text: '210', color: 0xffffff, size: 'small' },
+        { angle: 240, text: '240', color: 0xffffff, size: 'small' },
+        { angle: 270, text: 'W', color: 0xffffff, size: 'large' },
+        { angle: 300, text: '300', color: 0xffffff, size: 'small' },
+        { angle: 330, text: '330', color: 0xffffff, size: 'small' }
       ];
 
       directions.forEach(dir => {
         const angleRad = (dir.angle * Math.PI) / 180;
-        const radius = 0.15;
+        const radius = 0.28 * compassScale;
         
-        // Create tick marks
-        const tickLength = dir.major ? 0.02 : 0.01;
-        const tickGeometry = new THREE.BoxGeometry(0.002, tickLength, 0.001);
+        // Create larger tick marks
+        const tickLength = dir.size === 'large' ? 0.04 * compassScale : 0.02 * compassScale;
+        const tickWidth = dir.size === 'large' ? 0.004 * compassScale : 0.002 * compassScale;
+        const tickGeometry = new THREE.BoxGeometry(tickWidth, tickLength, 0.001);
         const tickMaterial = new THREE.MeshBasicMaterial({ color: dir.color });
         const tick = new THREE.Mesh(tickGeometry, tickMaterial);
         
@@ -179,47 +197,52 @@
         tick.rotation.z = -angleRad;
         compassCard.add(tick);
         
-        // Create direction labels using small boxes to represent text
-        if (dir.major || dir.text.length <= 2) {
-          const labelSize = dir.major ? 0.008 : 0.006;
-          const labelGeometry = new THREE.BoxGeometry(labelSize, labelSize, 0.001);
-          const labelMaterial = new THREE.MeshBasicMaterial({ color: dir.color });
-          const label = new THREE.Mesh(labelGeometry, labelMaterial);
-          
-          label.position.x = Math.sin(angleRad) * (radius - 0.03);
-          label.position.y = Math.cos(angleRad) * (radius - 0.03);
-          compassCard.add(label);
-        }
+        // Create direction markers (simplified text representation)
+        const markerSize = dir.size === 'large' ? 0.015 * compassScale : 0.008 * compassScale;
+        const markerGeometry = new THREE.BoxGeometry(markerSize, markerSize, 0.001);
+        const markerMaterial = new THREE.MeshBasicMaterial({ color: dir.color });
+        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+        
+        marker.position.x = Math.sin(angleRad) * (radius - 0.06 * compassScale);
+        marker.position.y = Math.cos(angleRad) * (radius - 0.06 * compassScale);
+        compassCard.add(marker);
       });
 
-      // Add degree markings around the compass
-      for (let i = 0; i < 360; i += 10) {
-        if (i % 30 !== 0) { // Skip major direction angles
+      // Add fine degree markings
+      for (let i = 0; i < 360; i += 5) {
+        if (i % 30 !== 0) {
           const angleRad = (i * Math.PI) / 180;
-          const tickGeometry = new THREE.BoxGeometry(0.001, 0.008, 0.001);
-          const tickMaterial = new THREE.MeshBasicMaterial({ color: 0x888888 });
+          const tickGeometry = new THREE.BoxGeometry(0.001 * compassScale, 0.015 * compassScale, 0.001);
+          const tickMaterial = new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.7 });
           const tick = new THREE.Mesh(tickGeometry, tickMaterial);
           
-          tick.position.x = Math.sin(angleRad) * 0.165;
-          tick.position.y = Math.cos(angleRad) * 0.165;
+          tick.position.x = Math.sin(angleRad) * 0.3 * compassScale;
+          tick.position.y = Math.cos(angleRad) * 0.3 * compassScale;
           tick.rotation.z = -angleRad;
           compassCard.add(tick);
         }
       }
 
       compassGroup.add(compassCard);
-      compass = compassCard; // This will rotate with heading
+      compass = compassCard;
       
-      // Fixed aircraft symbol (triangle pointing forward)
-      const aircraftGeometry = new THREE.ConeGeometry(0.012, 0.025, 3);
-      const aircraftMaterial = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
-      const aircraftSymbol = new THREE.Mesh(aircraftGeometry, aircraftMaterial);
-      aircraftSymbol.rotation.x = Math.PI / 2;
-      aircraftSymbol.position.y = 0.08;
-      compassGroup.add(aircraftSymbol);
+      // Fixed heading indicator at top (aircraft symbol)
+      const headingIndicatorGeometry = new THREE.ConeGeometry(0.02 * compassScale, 0.04 * compassScale, 3);
+      const headingIndicatorMaterial = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+      const headingIndicator = new THREE.Mesh(headingIndicatorGeometry, headingIndicatorMaterial);
+      headingIndicator.rotation.x = Math.PI / 2;
+      headingIndicator.position.y = 0.25 * compassScale;
+      compassGroup.add(headingIndicator);
 
-      // Position compass to follow camera/phone orientation
-      compassGroup.position.set(0, -0.25, -0.4);
+      // Center dot
+      const centerDotGeometry = new THREE.CircleGeometry(0.01 * compassScale, 16);
+      const centerDotMaterial = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+      const centerDot = new THREE.Mesh(centerDotGeometry, centerDotMaterial);
+      centerDot.position.z = 0.001;
+      compassGroup.add(centerDot);
+
+      // Position compass to fill screen (closer to camera)
+      compassGroup.position.set(0, 0, -1.2);
       scene.add(compassGroup);
 
       // Lighting
@@ -236,9 +259,10 @@
       // Update 2D needle
       needle2d.style.transform = `translate(-50%, -100%) rotate(${alpha}deg)`;
       
-      // Update 3D needle if in AR
-      if (needle && arSession) {
-        needle.rotation.z = -alpha * Math.PI / 180; // Convert to radians and invert
+      // Update 3D compass card if in AR
+      if (compass && arSession) {
+        // Compass card rotates opposite to heading (like real aircraft compass)
+        compass.rotation.z = alpha * Math.PI / 180;
       }
     }
 
@@ -275,49 +299,33 @@
           initThreeJS();
         }
 
-        arSession = await navigator.xr.requestSession('immersive-ar', {
-          requiredFeatures: [],
-          optionalFeatures: ['local', 'local-floor', 'viewer', 'dom-overlay'],
-        });
+        console.log('Requesting AR session...');
+        arSession = await navigator.xr.requestSession('immersive-ar');
 
+        console.log('AR session created, setting up renderer...');
         await renderer.xr.setSession(arSession);
         
-        // Try different reference spaces in order of preference
-        let referenceSpace;
-        const spaceTypes = ['local', 'local-floor', 'viewer'];
-        
-        for (const spaceType of spaceTypes) {
-          try {
-            referenceSpace = await arSession.requestReferenceSpace(spaceType);
-            console.log(`Using reference space: ${spaceType}`);
-            statusSpan.textContent = `AR active (${spaceType} space)`;
-            break;
-          } catch (e) {
-            console.log(`${spaceType} reference space not supported`);
-          }
-        }
-        
-        if (!referenceSpace) {
-          throw new Error('No supported reference space found');
-        }
+        console.log('Showing AR compass overlay...');
+        arCompassDiv.style.display = 'block';
         
         arSession.addEventListener('end', () => {
           arSession = null;
+          arCompassDiv.style.display = 'none';
           statusSpan.textContent = 'AR session ended';
           startARBtn.disabled = false;
           startARBtn.textContent = 'Start AR Compass';
         });
 
         startARBtn.disabled = true;
-        startARBtn.textContent = 'AR Active';
-        statusSpan.textContent = 'AR compass running';
+        startARBtn.textContent = 'AR Active - Look Around!';
+        statusSpan.textContent = 'AR compass overlay active';
 
-        // Start render loop
+        console.log('Starting render loop...');
         renderer.setAnimationLoop(render);
 
         // Ensure orientation tracking is active
-        if (!window.DeviceOrientationEvent || !window.addEventListener) {
-          console.log('Orientation events not available');
+        if (!window.DeviceOrientationEvent) {
+          console.log('Device orientation not available');
         }
 
       } catch (error) {
@@ -328,17 +336,6 @@
     });
 
     function render() {
-      if (compass && arSession) {
-        // Make compass always face the camera (billboard effect)
-        const compassGroup = compass.parent;
-        compassGroup.lookAt(camera.position);
-        compassGroup.rotateY(Math.PI); // Flip to face correct direction
-        
-        // Rotate the compass card based on device heading
-        // Aircraft compass rotates opposite to heading
-        compass.rotation.z = currentHeading * Math.PI / 180;
-      }
-      
       renderer.render(scene, camera);
     }
 
