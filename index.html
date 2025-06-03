@@ -1,358 +1,344 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebXR AR Magnetic Compass</title>
-  <style>
-    body {
-      margin: 0;
-      background: #000;
-      color: #fff;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      font-family: Arial, sans-serif;
-      flex-direction: column;
-    }
-    #info {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      z-index: 100;
-      background: rgba(0,0,0,0.7);
-      padding: 10px;
-      border-radius: 5px;
-    }
-    button {
-      padding: 15px 30px;
-      font-size: 18px;
-      background: #007bff;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      margin: 10px;
-    }
-    button:hover {
-      background: #0056b3;
-    }
-    button:disabled {
-      background: #666;
-      cursor: not-allowed;
-    }
-    #compass2d {
-      width: 200px;
-      height: 200px;
-      border: 3px solid #aaa;
-      border-radius: 50%;
-      position: relative;
-      background: radial-gradient(circle at center, #222 60%, #111 100%);
-      margin: 20px;
-    }
-    .needle2d {
-      width: 3px;
-      height: 100px;
-      background: red;
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform-origin: bottom center;
-      transform: translate(-50%, -100%) rotate(0deg);
-    }
-    #arCompass {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      pointer-events: none;
-      z-index: 50;
-      display: none;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebXR AR Magnetic Compass</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #000;
+            color: #fff;
+            overflow: hidden;
+        }
+        
+        #container {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+        }
+        
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        
+        #compass {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px;
+            height: 200px;
+            border: 3px solid #fff;
+            border-radius: 50%;
+            background: radial-gradient(circle, #333 0%, #111 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        #needle {
+            width: 4px;
+            height: 80px;
+            background: linear-gradient(to top, #ff0000 0%, #ff0000 50%, #ffffff 50%, #ffffff 100%);
+            transform-origin: center bottom;
+            position: absolute;
+            border-radius: 2px;
+            transition: transform 0.3s ease;
+        }
+        
+        #directions {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .direction {
+            position: absolute;
+            font-weight: bold;
+            font-size: 18px;
+        }
+        
+        .direction.north { top: 5px; left: 50%; transform: translateX(-50%); color: #ff0000; }
+        .direction.east { right: 10px; top: 50%; transform: translateY(-50%); }
+        .direction.south { bottom: 5px; left: 50%; transform: translateX(-50%); }
+        .direction.west { left: 10px; top: 50%; transform: translateY(-50%); }
+        
+        #startButton {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        
+        #startButton:hover {
+            background: #45a049;
+        }
+        
+        #startButton:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        
+        #status {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #ccc;
+        }
+    </style>
 </head>
 <body>
-  <div id="info">
-    <div>Heading: <span id="heading">--</span>°</div>
-    <div>AR Status: <span id="status">Not started</span></div>
-  </div>
+    <div id="container">
+        <div id="info">
+            <div>Heading: <span id="heading">--°</span></div>
+            <div>Direction: <span id="direction">--</span></div>
+            <div id="status">Click Start AR to begin</div>
+        </div>
+        
+        <div id="compass">
+            <div id="directions">
+                <div class="direction north">N</div>
+                <div class="direction east">E</div>
+                <div class="direction south">S</div>
+                <div class="direction west">W</div>
+            </div>
+            <div id="needle"></div>
+        </div>
+        
+        <button id="startButton">Start AR Compass</button>
+    </div>
 
-  <button id="startCompass">Start 2D Compass</button>
-  <button id="startAR">Start AR Compass</button>
-  
-  <div id="compass2d">
-    <div class="needle2d"></div>
-  </div>
-
-  <!-- AR Compass Overlay -->
-  <div id="arCompass"></div>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script>
-    let scene, camera, renderer, compass, arSession;
-    let currentHeading = 0;
-    
-    const needle2d = document.querySelector('.needle2d');
-    const startCompassBtn = document.getElementById('startCompass');
-    const startARBtn = document.getElementById('startAR');
-    const headingSpan = document.getElementById('heading');
-    const statusSpan = document.getElementById('status');
-    const arCompassDiv = document.getElementById('arCompass');
-
-    // Check WebXR support
-    async function checkARSupport() {
-      if ('xr' in navigator) {
-        try {
-          const supported = await navigator.xr.isSessionSupported('immersive-ar');
-          if (!supported) {
-            startARBtn.disabled = true;
-            startARBtn.textContent = 'AR Not Supported';
-            statusSpan.textContent = 'AR not supported on this device';
-          }
-        } catch (error) {
-          startARBtn.disabled = true;
-          startARBtn.textContent = 'AR Check Failed';
-          statusSpan.textContent = 'Error checking AR support';
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        class ARCompass {
+            constructor() {
+                this.xrSession = null;
+                this.xrRefSpace = null;
+                this.renderer = null;
+                this.scene = null;
+                this.camera = null;
+                this.currentHeading = 0;
+                this.isARActive = false;
+                
+                this.init();
+            }
+            
+            init() {
+                this.setupEventListeners();
+                this.startDeviceOrientationFallback();
+            }
+            
+            setupEventListeners() {
+                document.getElementById('startButton').addEventListener('click', () => {
+                    this.startAR();
+                });
+            }
+            
+            async startAR() {
+                const button = document.getElementById('startButton');
+                const status = document.getElementById('status');
+                
+                try {
+                    button.disabled = true;
+                    status.textContent = 'Initializing AR...';
+                    
+                    // Check WebXR support
+                    if (!navigator.xr) {
+                        throw new Error('WebXR not supported');
+                    }
+                    
+                    // Check AR support
+                    const isSupported = await navigator.xr.isSessionSupported('immersive-ar');
+                    if (!isSupported) {
+                        throw new Error('AR not supported on this device');
+                    }
+                    
+                    // Request AR session
+                    this.xrSession = await navigator.xr.requestSession('immersive-ar', {
+                        requiredFeatures: ['local']
+                    });
+                    
+                    status.textContent = 'AR session started';
+                    
+                    // Setup Three.js renderer for WebXR
+                    this.setupRenderer();
+                    
+                    // Get reference space with error handling
+                    try {
+                        this.xrRefSpace = await this.xrSession.requestReferenceSpace('local');
+                    } catch (referenceSpaceError) {
+                        console.warn('Local reference space not available, trying viewer');
+                        try {
+                            this.xrRefSpace = await this.xrSession.requestReferenceSpace('viewer');
+                        } catch (viewerError) {
+                            console.warn('Viewer reference space not available, trying bounded-floor');
+                            this.xrRefSpace = await this.xrSession.requestReferenceSpace('bounded-floor');
+                        }
+                    }
+                    
+                    // Start render loop
+                    this.xrSession.requestAnimationFrame(this.onXRFrame.bind(this));
+                    
+                    // Handle session end
+                    this.xrSession.addEventListener('end', () => {
+                        this.onARSessionEnd();
+                    });
+                    
+                    this.isARActive = true;
+                    button.textContent = 'Stop AR';
+                    button.disabled = false;
+                    button.onclick = () => this.stopAR();
+                    
+                } catch (error) {
+                    console.error('AR initialization error:', error);
+                    status.textContent = `AR Error: ${error.message}. Using device orientation.`;
+                    button.disabled = false;
+                    button.textContent = 'Start AR Compass';
+                    
+                    // Fallback to device orientation
+                    this.startDeviceOrientationFallback();
+                }
+            }
+            
+            setupRenderer() {
+                this.renderer = new THREE.WebGLRenderer({ 
+                    antialias: true, 
+                    alpha: true 
+                });
+                this.renderer.setPixelRatio(window.devicePixelRatio);
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.xr.enabled = true;
+                this.renderer.xr.setSession(this.xrSession);
+                
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                
+                // Add some basic lighting
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+                this.scene.add(ambientLight);
+                
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(0, 1, 0);
+                this.scene.add(directionalLight);
+            }
+            
+            onXRFrame(time, frame) {
+                if (!this.xrSession || !this.xrRefSpace) return;
+                
+                try {
+                    const pose = frame.getViewerPose(this.xrRefSpace);
+                    if (pose) {
+                        // Extract orientation from pose
+                        const orientation = pose.transform.orientation;
+                        this.updateCompassFromQuaternion(orientation);
+                    }
+                } catch (error) {
+                    console.warn('Error getting pose:', error);
+                }
+                
+                this.xrSession.requestAnimationFrame(this.onXRFrame.bind(this));
+            }
+            
+            updateCompassFromQuaternion(quaternion) {
+                // Convert quaternion to Euler angles
+                const euler = new THREE.Euler();
+                const quat = new THREE.Quaternion(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
+                euler.setFromQuaternion(quat);
+                
+                // Extract heading (Y rotation)
+                let heading = euler.y * (180 / Math.PI);
+                heading = (heading + 360) % 360;
+                
+                this.updateCompass(heading);
+            }
+            
+            startDeviceOrientationFallback() {
+                if (window.DeviceOrientationEvent) {
+                    window.addEventListener('deviceorientation', (event) => {
+                        if (!this.isARActive && event.alpha !== null) {
+                            // Device orientation alpha gives us compass heading
+                            let heading = 360 - event.alpha;
+                            heading = (heading + 360) % 360;
+                            this.updateCompass(heading);
+                        }
+                    });
+                    
+                    document.getElementById('status').textContent = 'Using device orientation sensor';
+                } else {
+                    document.getElementById('status').textContent = 'Device orientation not supported';
+                }
+            }
+            
+            updateCompass(heading) {
+                this.currentHeading = heading;
+                
+                // Update needle rotation
+                const needle = document.getElementById('needle');
+                needle.style.transform = `rotate(${heading}deg)`;
+                
+                // Update heading display
+                document.getElementById('heading').textContent = Math.round(heading) + '°';
+                
+                // Update direction text
+                const direction = this.getDirection(heading);
+                document.getElementById('direction').textContent = direction;
+            }
+            
+            getDirection(heading) {
+                const directions = [
+                    'N', 'NNE', 'NE', 'ENE',
+                    'E', 'ESE', 'SE', 'SSE',
+                    'S', 'SSW', 'SW', 'WSW',
+                    'W', 'WNW', 'NW', 'NNW'
+                ];
+                
+                const index = Math.round(heading / 22.5) % 16;
+                return directions[index];
+            }
+            
+            stopAR() {
+                if (this.xrSession) {
+                    this.xrSession.end();
+                }
+            }
+            
+            onARSessionEnd() {
+                this.isARActive = false;
+                this.xrSession = null;
+                this.xrRefSpace = null;
+                
+                const button = document.getElementById('startButton');
+                button.textContent = 'Start AR Compass';
+                button.onclick = () => this.startAR();
+                
+                document.getElementById('status').textContent = 'AR session ended. Using device orientation.';
+                this.startDeviceOrientationFallback();
+            }
         }
-      } else {
-        startARBtn.disabled = true;
-        startARBtn.textContent = 'WebXR Not Available';
-        statusSpan.textContent = 'WebXR not available';
-      }
-    }
-
-    // Initialize Three.js scene for full-screen overlay
-    function initThreeJS() {
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.xr.enabled = true;
-      renderer.setClearColor(0x000000, 0); // Transparent background
-      arCompassDiv.appendChild(renderer.domElement);
-
-      // Create large compass overlay that fills most of the screen
-      const compassGroup = new THREE.Group();
-      
-      // Make compass much larger to fill screen
-      const compassScale = 2.5;
-      
-      // Outer compass ring
-      const outerRingGeometry = new THREE.RingGeometry(0.35 * compassScale, 0.38 * compassScale, 128);
-      const outerRingMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0xffffff, 
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.8
-      });
-      const outerRing = new THREE.Mesh(outerRingGeometry, outerRingMaterial);
-      compassGroup.add(outerRing);
-
-      // Inner compass ring
-      const innerRingGeometry = new THREE.RingGeometry(0.32 * compassScale, 0.35 * compassScale, 128);
-      const innerRingMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0x333333, 
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.6
-      });
-      const innerRing = new THREE.Mesh(innerRingGeometry, innerRingMaterial);
-      compassGroup.add(innerRing);
-
-      // Create rotating compass card
-      const compassCard = new THREE.Group();
-      
-      // Main directions with larger text representation
-      const directions = [
-        { angle: 0, text: 'N', color: 0xff4444, size: 'large' },
-        { angle: 30, text: '030', color: 0xffffff, size: 'small' },
-        { angle: 60, text: '060', color: 0xffffff, size: 'small' },
-        { angle: 90, text: 'E', color: 0xffffff, size: 'large' },
-        { angle: 120, text: '120', color: 0xffffff, size: 'small' },
-        { angle: 150, text: '150', color: 0xffffff, size: 'small' },
-        { angle: 180, text: 'S', color: 0xffffff, size: 'large' },
-        { angle: 210, text: '210', color: 0xffffff, size: 'small' },
-        { angle: 240, text: '240', color: 0xffffff, size: 'small' },
-        { angle: 270, text: 'W', color: 0xffffff, size: 'large' },
-        { angle: 300, text: '300', color: 0xffffff, size: 'small' },
-        { angle: 330, text: '330', color: 0xffffff, size: 'small' }
-      ];
-
-      directions.forEach(dir => {
-        const angleRad = (dir.angle * Math.PI) / 180;
-        const radius = 0.28 * compassScale;
         
-        // Create larger tick marks
-        const tickLength = dir.size === 'large' ? 0.04 * compassScale : 0.02 * compassScale;
-        const tickWidth = dir.size === 'large' ? 0.004 * compassScale : 0.002 * compassScale;
-        const tickGeometry = new THREE.BoxGeometry(tickWidth, tickLength, 0.001);
-        const tickMaterial = new THREE.MeshBasicMaterial({ color: dir.color });
-        const tick = new THREE.Mesh(tickGeometry, tickMaterial);
-        
-        tick.position.x = Math.sin(angleRad) * (radius + tickLength/2);
-        tick.position.y = Math.cos(angleRad) * (radius + tickLength/2);
-        tick.rotation.z = -angleRad;
-        compassCard.add(tick);
-        
-        // Create direction markers (simplified text representation)
-        const markerSize = dir.size === 'large' ? 0.015 * compassScale : 0.008 * compassScale;
-        const markerGeometry = new THREE.BoxGeometry(markerSize, markerSize, 0.001);
-        const markerMaterial = new THREE.MeshBasicMaterial({ color: dir.color });
-        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-        
-        marker.position.x = Math.sin(angleRad) * (radius - 0.06 * compassScale);
-        marker.position.y = Math.cos(angleRad) * (radius - 0.06 * compassScale);
-        compassCard.add(marker);
-      });
-
-      // Add fine degree markings
-      for (let i = 0; i < 360; i += 5) {
-        if (i % 30 !== 0) {
-          const angleRad = (i * Math.PI) / 180;
-          const tickGeometry = new THREE.BoxGeometry(0.001 * compassScale, 0.015 * compassScale, 0.001);
-          const tickMaterial = new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.7 });
-          const tick = new THREE.Mesh(tickGeometry, tickMaterial);
-          
-          tick.position.x = Math.sin(angleRad) * 0.3 * compassScale;
-          tick.position.y = Math.cos(angleRad) * 0.3 * compassScale;
-          tick.rotation.z = -angleRad;
-          compassCard.add(tick);
-        }
-      }
-
-      compassGroup.add(compassCard);
-      compass = compassCard;
-      
-      // Fixed heading indicator at top (aircraft symbol)
-      const headingIndicatorGeometry = new THREE.ConeGeometry(0.02 * compassScale, 0.04 * compassScale, 3);
-      const headingIndicatorMaterial = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
-      const headingIndicator = new THREE.Mesh(headingIndicatorGeometry, headingIndicatorMaterial);
-      headingIndicator.rotation.x = Math.PI / 2;
-      headingIndicator.position.y = 0.25 * compassScale;
-      compassGroup.add(headingIndicator);
-
-      // Center dot
-      const centerDotGeometry = new THREE.CircleGeometry(0.01 * compassScale, 16);
-      const centerDotMaterial = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
-      const centerDot = new THREE.Mesh(centerDotGeometry, centerDotMaterial);
-      centerDot.position.z = 0.001;
-      compassGroup.add(centerDot);
-
-      // Position compass to fill screen (closer to camera)
-      compassGroup.position.set(0, 0, -1.2);
-      scene.add(compassGroup);
-
-      // Lighting
-      const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
-      scene.add(ambientLight);
-    }
-
-    // Handle device orientation
-    function handleOrientation(event) {
-      const alpha = event.alpha || 0;
-      currentHeading = alpha;
-      headingSpan.textContent = Math.round(alpha);
-      
-      // Update 2D needle
-      needle2d.style.transform = `translate(-50%, -100%) rotate(${alpha}deg)`;
-      
-      // Update 3D compass card if in AR
-      if (compass && arSession) {
-        // Compass card rotates opposite to heading (like real aircraft compass)
-        compass.rotation.z = alpha * Math.PI / 180;
-      }
-    }
-
-    // Start 2D compass
-    startCompassBtn.addEventListener('click', async () => {
-      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-          const response = await DeviceOrientationEvent.requestPermission();
-          if (response === 'granted') {
-            window.addEventListener('deviceorientation', handleOrientation);
-            startCompassBtn.textContent = '2D Compass Active';
-            startCompassBtn.disabled = true;
-            statusSpan.textContent = '2D compass running';
-          } else {
-            alert('Permission denied for device orientation.');
-          }
-        } catch (error) {
-          alert('Error requesting orientation permission: ' + error);
-        }
-      } else {
-        window.addEventListener('deviceorientation', handleOrientation);
-        startCompassBtn.textContent = '2D Compass Active';
-        startCompassBtn.disabled = true;
-        statusSpan.textContent = '2D compass running';
-      }
-    });
-
-    // Start AR session
-    startARBtn.addEventListener('click', async () => {
-      try {
-        statusSpan.textContent = 'Starting AR...';
-        
-        if (!scene) {
-          initThreeJS();
-        }
-
-        console.log('Requesting AR session...');
-        arSession = await navigator.xr.requestSession('immersive-ar');
-
-        console.log('AR session created, setting up renderer...');
-        await renderer.xr.setSession(arSession);
-        
-        console.log('Showing AR compass overlay...');
-        arCompassDiv.style.display = 'block';
-        
-        arSession.addEventListener('end', () => {
-          arSession = null;
-          arCompassDiv.style.display = 'none';
-          statusSpan.textContent = 'AR session ended';
-          startARBtn.disabled = false;
-          startARBtn.textContent = 'Start AR Compass';
+        // Initialize the compass when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new ARCompass();
         });
-
-        startARBtn.disabled = true;
-        startARBtn.textContent = 'AR Active - Look Around!';
-        statusSpan.textContent = 'AR compass overlay active';
-
-        console.log('Starting render loop...');
-        renderer.setAnimationLoop(render);
-
-        // Ensure orientation tracking is active
-        if (!window.DeviceOrientationEvent) {
-          console.log('Device orientation not available');
-        }
-
-      } catch (error) {
-        console.error('AR Error:', error);
-        statusSpan.textContent = 'AR failed: ' + error.message;
-        alert('Failed to start AR: ' + error.message);
-      }
-    });
-
-    function render() {
-      renderer.render(scene, camera);
-    }
-
-    // Initialize
-    checkARSupport();
-
-    // Handle window resize
-    window.addEventListener('resize', () => {
-      if (camera && renderer) {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      }
-    });
-  </script>
+    </script>
 </body>
 </html>
+
 
 
 
