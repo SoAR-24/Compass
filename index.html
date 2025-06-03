@@ -76,8 +76,8 @@
         .direction.west { left: 10px; top: 50%; transform: translateY(-50%); }
         
         #startButton {
-            position: absolute;
-            bottom: 20px;
+            position: fixed;
+            bottom: 60px;
             left: 50%;
             transform: translateX(-50%);
             padding: 15px 30px;
@@ -87,6 +87,8 @@
             border-radius: 5px;
             font-size: 16px;
             cursor: pointer;
+            z-index: 1000;
+            touch-action: manipulation;
         }
         
         #startButton:hover {
@@ -147,8 +149,19 @@
             }
             
             setupEventListeners() {
-                document.getElementById('startButton').addEventListener('click', () => {
-                    this.startAR();
+                const button = document.getElementById('startButton');
+                const self = this;
+                
+                button.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('Button clicked');
+                    self.startAR();
+                });
+                
+                button.addEventListener('touchstart', function(e) {
+                    e.preventDefault();
+                    console.log('Button touched');
+                    self.startAR();
                 });
             }
             
@@ -156,14 +169,20 @@
                 const button = document.getElementById('startButton');
                 const status = document.getElementById('status');
                 
+                // Prevent multiple clicks
+                if (button.disabled) return;
+                
                 try {
                     button.disabled = true;
                     status.textContent = 'Initializing AR...';
+                    console.log('Starting AR...');
                     
                     // Check WebXR support
                     if (!navigator.xr) {
                         throw new Error('WebXR not supported');
                     }
+                    
+                    console.log('WebXR available, checking AR support...');
                     
                     // Check AR support
                     const isSupported = await navigator.xr.isSessionSupported('immersive-ar');
@@ -171,11 +190,15 @@
                         throw new Error('AR not supported on this device');
                     }
                     
+                    console.log('AR supported, requesting session...');
+                    
                     // Request AR session
                     this.xrSession = await navigator.xr.requestSession('immersive-ar', {
-                        requiredFeatures: ['local']
+                        requiredFeatures: ['local-floor'],
+                        optionalFeatures: ['local', 'viewer']
                     });
                     
+                    console.log('AR session created');
                     status.textContent = 'AR session started';
                     
                     // Setup Three.js renderer for WebXR
@@ -183,19 +206,19 @@
                     
                     // Get reference space with error handling
                     try {
-                        this.xrRefSpace = await this.xrSession.requestReferenceSpace('local');
+                        this.xrRefSpace = await this.xrSession.requestReferenceSpace('local-floor');
+                        console.log('Using local-floor reference space');
                     } catch (referenceSpaceError) {
-                        console.warn('Local reference space not available, trying viewer');
+                        console.warn('Local-floor reference space not available, trying local');
                         try {
+                            this.xrRefSpace = await this.xrSession.requestReferenceSpace('local');
+                            console.log('Using local reference space');
+                        } catch (localError) {
+                            console.warn('Local reference space not available, trying viewer');
                             this.xrRefSpace = await this.xrSession.requestReferenceSpace('viewer');
-                        } catch (viewerError) {
-                            console.warn('Viewer reference space not available, trying bounded-floor');
-                            this.xrRefSpace = await this.xrSession.requestReferenceSpace('bounded-floor');
+                            console.log('Using viewer reference space');
                         }
                     }
-                    
-                    // Start render loop
-                    this.xrSession.requestAnimationFrame(this.onXRFrame.bind(this));
                     
                     // Handle session end
                     this.xrSession.addEventListener('end', () => {
@@ -205,7 +228,13 @@
                     this.isARActive = true;
                     button.textContent = 'Stop AR';
                     button.disabled = false;
-                    button.onclick = () => this.stopAR();
+                    
+                    // Update button click handler
+                    const self = this;
+                    button.onclick = function(e) {
+                        e.preventDefault();
+                        self.stopAR();
+                    };
                     
                 } catch (error) {
                     console.error('AR initialization error:', error);
@@ -339,13 +368,14 @@
             }
             
             startDeviceOrientationFallback() {
+                const self = this;
                 if (window.DeviceOrientationEvent) {
-                    window.addEventListener('deviceorientation', (event) => {
-                        if (!this.isARActive && event.alpha !== null) {
+                    window.addEventListener('deviceorientation', function(event) {
+                        if (!self.isARActive && event.alpha !== null) {
                             // Device orientation alpha gives us compass heading
                             let heading = 360 - event.alpha;
                             heading = (heading + 360) % 360;
-                            this.updateCompass(heading);
+                            self.updateCompass(heading);
                         }
                     });
                     
@@ -409,8 +439,11 @@
                 this.arNeedle = null;
                 
                 const button = document.getElementById('startButton');
+                const self = this;
                 button.textContent = 'Start AR Compass';
-                button.onclick = () => this.startAR();
+                button.onclick = function() {
+                    self.startAR();
+                };
                 
                 document.getElementById('status').textContent = 'AR session ended. Using device orientation.';
                 this.startDeviceOrientationFallback();
@@ -424,6 +457,7 @@
     </script>
 </body>
 </html>
+
 
 
 
