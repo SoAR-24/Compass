@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aircraft Compass</title>
+  <style>
+    body {
+      margin: 0;
+      background: #333;
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: Arial, sans-serif;
+    }
+    #compass {
+      width: 300px;
+      height: 300px;
+      border: 5px solid #aaa;
+      border-radius: 50%;
+      position: relative;
+      background: radial-gradient(circle at center, #222 60%, #111 100%);
+    }
+    #needle {
+      width: 4px;
+      height: 150px;
+      background: red;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform-origin: bottom center;
+      transform: translate(-50%, -100%) rotate(0deg);
+    }
+  </style>
+</head>
+<body>
+  <button id="startBtn">Start Compass</button>
+  <div class="compass">
+      <div class="needle"></div>
+  </div>
+
+  <script>
+      const needle = document.querySelector('.needle');
+      const startBtn = document.getElementById('startBtn');
+
+      startBtn.addEventListener('click', async () => {
+          if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+              try {
+                  const response = await DeviceOrientationEvent.requestPermission();
+                  if (response === 'granted') {
+                      window.addEventListener('deviceorientation', handleOrientation);
+                      startBtn.style.display = 'none'; // Hide button after permission granted
+                  } else {
+                      alert('Permission denied.');
+                  }
+              } catch (error) {
+                  alert('Error: ' + error);
+              }
+          } else {
+              // Non-iOS devices (like Android) typically don't need permission.
+              window.addEventListener('deviceorientation', handleOrientation);
+              startBtn.style.display = 'none';
+          }
+      });
+
+      function handleOrientation(event) {
+          const alpha = event.alpha || 0; // 0-360 degrees
+          needle.style.transform = `rotate(${alpha}deg)`;
+      }
+  </script>
+</body>
+
+</html>
+
